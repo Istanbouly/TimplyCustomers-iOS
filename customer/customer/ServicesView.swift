@@ -124,15 +124,27 @@ struct ServicesView: View {
             }
             .disabled(true)
         } else {
+            let totalPriceCents = selected.compactMap { $0.priceCents }.reduce(0, +)
             let dest = SlotPickerDestination(
-                memberSlug:             destination.memberSlug,
-                memberName:             destination.memberName,
-                businessName:           destination.businessName,
-                selectedEventTypeIds:   selected.map(\.id),
-                selectedEventTypeNames: selected.map(\.name),
-                totalDurationMinutes:   total,
-                availableDays:          page.availableDays,
-                timezone:               page.timezone
+                memberSlug:                  destination.memberSlug,
+                memberName:                  destination.memberName,
+                businessName:                destination.businessName,
+                selectedEventTypeIds:        selected.map(\.id),
+                selectedEventTypeNames:      selected.map(\.name),
+                totalDurationMinutes:        total,
+                availableDays:               page.availableDays,
+                timezone:                    page.timezone,
+                stripeChargesEnabled:        page.stripeChargesEnabled,
+                requireUpfrontPayment:       page.requireUpfrontPayment,
+                totalPriceCents:             totalPriceCents,
+                cancellationPolicyEnabled:   page.cancellationPolicyEnabled,
+                cancellationPolicyHours:     page.cancellationPolicyHours,
+                cancellationFeeType:         page.cancellationFeeType,
+                cancellationFeeAmount:       page.cancellationFeeAmount,
+                noShowPolicyEnabled:         page.noShowPolicyEnabled,
+                noShowFeeType:               page.noShowFeeType,
+                noShowFeeAmount:             page.noShowFeeAmount,
+                refundPolicy:                page.refundPolicy
             )
             NavigationLink(value: dest) {
                 HStack(spacing: 6) {

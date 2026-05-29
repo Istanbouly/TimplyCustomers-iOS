@@ -1,4 +1,7 @@
 import SwiftUI
+import AVFoundation
+
+private let confirmedGreen = Color(red: 0.0, green: 150.0/255.0, blue: 106.0/255.0)
 
 struct BookingConfirmationView: View {
     let serviceName: String
@@ -9,6 +12,8 @@ struct BookingConfirmationView: View {
     let status: String        // "confirmed" or "pending"
     let onComplete: () -> Void
 
+    @State private var audioPlayer: AVAudioPlayer?
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
@@ -16,11 +21,11 @@ struct BookingConfirmationView: View {
             // Icon
             ZStack {
                 Circle()
-                    .fill(isConfirmed ? Color.indigo.opacity(0.1) : Color(red: 0.95, green: 0.65, blue: 0.10).opacity(0.12))
+                    .fill(isConfirmed ? confirmedGreen.opacity(0.12) : Color(red: 0.95, green: 0.65, blue: 0.10).opacity(0.12))
                     .frame(width: 100, height: 100)
                 Image(systemName: isConfirmed ? "checkmark.circle.fill" : "clock.fill")
                     .font(.system(size: 52))
-                    .foregroundStyle(isConfirmed ? Color.indigo : Color(red: 0.95, green: 0.65, blue: 0.10))
+                    .foregroundStyle(isConfirmed ? confirmedGreen : Color(red: 0.95, green: 0.65, blue: 0.10))
             }
             .padding(.bottom, 24)
 
@@ -75,6 +80,17 @@ struct BookingConfirmationView: View {
         .navigationTitle("")
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .tabBar)
+        .onAppear { playConfirmationSound() }
+    }
+
+    private func playConfirmationSound() {
+        if let url = Bundle.main.url(forResource: "notification", withExtension: "mp3") {
+            audioPlayer = try? AVAudioPlayer(contentsOf: url)
+            audioPlayer?.play()
+        } else {
+            // Fallback: system notification haptic + sound
+            AudioServicesPlaySystemSound(1007)
+        }
     }
 
     private var isConfirmed: Bool { status == "confirmed" }

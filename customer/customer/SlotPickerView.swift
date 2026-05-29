@@ -6,6 +6,9 @@ struct SlotPickerView: View {
     let onComplete: () -> Void
 
     @StateObject private var viewModel: SlotPickerViewModel
+    @State private var showPolicyView = false
+    @State private var showPaymentView = false
+    @State private var pendingIsPay = false
 
     init(destination: SlotPickerDestination, onComplete: @escaping () -> Void) {
         self.destination = destination
@@ -63,6 +66,36 @@ struct SlotPickerView: View {
                 status:       viewModel.confirmedStatus,
                 onComplete:   onComplete
             )
+        }
+        .navigationDestination(isPresented: $showPolicyView) {
+            if let date = viewModel.selectedDate, let time = viewModel.selectedTime {
+                PolicyView(
+                    destination:  destination,
+                    selectedDate: date,
+                    selectedTime: time,
+                    isPay:        pendingIsPay,
+                    onComplete:   onComplete,
+                    onBook: { params in
+                        await viewModel.confirmBooking(extraParams: params)
+                    }
+                )
+            }
+        }
+        .navigationDestination(isPresented: $showPaymentView) {
+            if let date = viewModel.selectedDate, let time = viewModel.selectedTime {
+                PaymentView(
+                    memberSlug:      destination.memberSlug,
+                    memberName:      destination.memberName,
+                    businessName:    destination.businessName,
+                    eventTypeIds:    destination.selectedEventTypeIds,
+                    eventTypeNames:  destination.selectedEventTypeNames,
+                    selectedDate:    date,
+                    selectedTime:    time,
+                    totalPriceCents: destination.totalPriceCents,
+                    policySnapshot:  [:],
+                    onComplete:      onComplete
+                )
+            }
         }
         .alert("Something went wrong", isPresented: $viewModel.showError) {
             Button("OK", role: .cancel) {}
@@ -173,10 +206,18 @@ struct SlotPickerView: View {
 
     // MARK: - Confirm bar
 
+    private var showPayButton: Bool {
+        destination.stripeChargesEnabled && destination.totalPriceCents > 0
+    }
+
+    private var priceLabel: String {
+        String(format: "$%.0f", Double(destination.totalPriceCents) / 100.0)
+    }
+
     private func confirmBar(time: String) -> some View {
         VStack(spacing: 0) {
             Divider()
-            VStack(spacing: 4) {
+            VStack(spacing: 8) {
                 // Summary row
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -195,29 +236,72 @@ struct SlotPickerView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
 
-                Button {
-                    Task { await viewModel.confirmBooking() }
-                } label: {
-                    Group {
-                        if viewModel.isBooking {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Text("Confirm Booking")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                        }
+                if showPayButton {
+                    // Pay Now button
+                    Button {
+                        pendingIsPay = true
+                        if destination.hasPolicies { showPolicyView = true }
+                        else { showPaymentView = true }
+                    } label: {
+                        Text("Pay Now (\(priceLabel))")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.indigo)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.indigo)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+
+                    if !destination.requireUpfrontPayment {
+                        // Pay in Person — secondary option
+                        Button {
+                            pendingIsPay = false
+                            if destination.hasPolicies { showPolicyView = true }
+                            else { Task { await viewModel.confirmBooking() } }
+                        } label: {
+                            Text("Pay in Person")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.indigo)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.indigo.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                    }
+                } else {
+                    // No Stripe — straight booking
+                    Button {
+                        pendingIsPay = false
+                        if destination.hasPolicies { showPolicyView = true }
+                        else { Task { await viewModel.confirmBooking() } }
+                    } label: {
+                        Group {
+                            if viewModel.isBooking {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text("Book Appointment")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.indigo)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.isBooking)
+                    .padding(.horizontal, 16)
                 }
-                .disabled(viewModel.isBooking)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
             }
+            .padding(.bottom, 12)
             .background(Color(.systemBackground))
         }
     }
@@ -412,7 +496,7 @@ class SlotPickerViewModel: ObservableObject {
         slots = result.slots
     }
 
-    func confirmBooking() async {
+    func confirmBooking(extraParams: [String: Any] = [:]) async {
         guard let date = selectedDate,
               let time = selectedTime,
               let token = KeychainService.getAccessToken()
@@ -422,14 +506,15 @@ class SlotPickerViewModel: ObservableObject {
         defer { isBooking = false }
 
         do {
-            let body: [String: Any] = [
+            var body: [String: Any] = [
                 "event_type_ids": destination.selectedEventTypeIds,
                 "date":           date,
                 "start_time":     time,
             ]
+            for (key, value) in extraParams { body[key] = value }
             let result: MobileBookingResponse = try await APIClient.post(
-                path: "/customer/book/\(destination.memberSlug)",
-                body: body,
+                path:  "/customer/book/\(destination.memberSlug)",
+                body:  body,
                 token: token
             )
 
