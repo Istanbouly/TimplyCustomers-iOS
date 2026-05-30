@@ -6,9 +6,11 @@ struct SlotPickerView: View {
     let onComplete: () -> Void
 
     @StateObject private var viewModel: SlotPickerViewModel
+    @StateObject private var holdTimer = SlotHoldTimer()
     @State private var showPolicyView = false
     @State private var showPaymentView = false
     @State private var pendingIsPay = false
+    @State private var bookingCompleted = false
 
     init(destination: SlotPickerDestination, onComplete: @escaping () -> Void) {
         self.destination = destination
@@ -41,8 +43,12 @@ struct SlotPickerView: View {
                 slotsGrid
             }
 
-            // Sticky confirm button
-            if let selected = viewModel.selectedTime {
+            // Sticky confirm / conflict / acquiring area
+            if holdTimer.isAcquiring {
+                checkingBar
+            } else if holdTimer.conflictMessage != nil {
+                slotConflictCard
+            } else if let selected = viewModel.selectedTime {
                 confirmBar(time: selected)
             }
         }
@@ -55,6 +61,9 @@ struct SlotPickerView: View {
         }
         .onChange(of: viewModel.selectedDate) { _, _ in
             Task { await viewModel.fetchSlots() }
+        }
+        .onChange(of: viewModel.selectedTime) { _, _ in
+            holdTimer.clearConflict()
         }
         .navigationDestination(isPresented: $viewModel.showConfirmationScreen) {
             BookingConfirmationView(
@@ -74,11 +83,21 @@ struct SlotPickerView: View {
                     selectedDate: date,
                     selectedTime: time,
                     isPay:        pendingIsPay,
-                    onComplete:   onComplete,
+                    onComplete: {
+                        bookingCompleted = true
+                        onComplete()
+                    },
                     onBook: { params in
+                        bookingCompleted = true
                         await viewModel.confirmBooking(extraParams: params)
                     }
                 )
+                .environmentObject(holdTimer)
+            }
+        }
+        .onChange(of: showPolicyView) { _, isPresented in
+            if !isPresented && !bookingCompleted {
+                holdTimer.release()
             }
         }
         .navigationDestination(isPresented: $showPaymentView) {
@@ -93,8 +112,17 @@ struct SlotPickerView: View {
                     selectedTime:    time,
                     totalPriceCents: destination.totalPriceCents,
                     policySnapshot:  [:],
-                    onComplete:      onComplete
+                    onComplete: {
+                        bookingCompleted = true
+                        onComplete()
+                    }
                 )
+                .environmentObject(holdTimer)
+            }
+        }
+        .onChange(of: showPaymentView) { _, isPresented in
+            if !isPresented && !bookingCompleted {
+                holdTimer.release()
             }
         }
         .alert("Something went wrong", isPresented: $viewModel.showError) {
@@ -240,8 +268,17 @@ struct SlotPickerView: View {
                     // Pay Now button
                     Button {
                         pendingIsPay = true
-                        if destination.hasPolicies { showPolicyView = true }
-                        else { showPaymentView = true }
+                        Task {
+                            let ok = await holdTimer.tryAcquire(
+                                slug: destination.memberSlug,
+                                date: viewModel.selectedDate ?? "",
+                                time: time,
+                                eventTypeIds: destination.selectedEventTypeIds
+                            )
+                            guard ok else { return }
+                            if destination.hasPolicies { showPolicyView = true }
+                            else { showPaymentView = true }
+                        }
                     } label: {
                         Text("Pay Now (\(priceLabel))")
                             .font(.subheadline)
@@ -259,8 +296,20 @@ struct SlotPickerView: View {
                         // Pay in Person — secondary option
                         Button {
                             pendingIsPay = false
-                            if destination.hasPolicies { showPolicyView = true }
-                            else { Task { await viewModel.confirmBooking() } }
+                            if destination.hasPolicies {
+                                Task {
+                                    let ok = await holdTimer.tryAcquire(
+                                        slug: destination.memberSlug,
+                                        date: viewModel.selectedDate ?? "",
+                                        time: time,
+                                        eventTypeIds: destination.selectedEventTypeIds
+                                    )
+                                    guard ok else { return }
+                                    showPolicyView = true
+                                }
+                            } else {
+                                Task { await viewModel.confirmBooking() }
+                            }
                         } label: {
                             Text("Pay in Person")
                                 .font(.subheadline)
@@ -278,8 +327,20 @@ struct SlotPickerView: View {
                     // No Stripe — straight booking
                     Button {
                         pendingIsPay = false
-                        if destination.hasPolicies { showPolicyView = true }
-                        else { Task { await viewModel.confirmBooking() } }
+                        if destination.hasPolicies {
+                            Task {
+                                let ok = await holdTimer.tryAcquire(
+                                    slug: destination.memberSlug,
+                                    date: viewModel.selectedDate ?? "",
+                                    time: time,
+                                    eventTypeIds: destination.selectedEventTypeIds
+                                )
+                                guard ok else { return }
+                                showPolicyView = true
+                            }
+                        } else {
+                            Task { await viewModel.confirmBooking() }
+                        }
                     } label: {
                         Group {
                             if viewModel.isBooking {
@@ -302,6 +363,80 @@ struct SlotPickerView: View {
                 }
             }
             .padding(.bottom, 12)
+            .background(Color(.systemBackground))
+        }
+    }
+
+    // MARK: - Checking availability bar
+
+    private var checkingBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 10) {
+                ProgressView().scaleEffect(0.85)
+                Text("Checking availability...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 22)
+            .background(Color(.systemBackground))
+        }
+    }
+
+    // MARK: - Slot conflict card (shown when another customer holds the slot)
+
+    private var slotConflictCard: some View {
+        VStack(spacing: 0) {
+            Divider()
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Time Temporarily Held")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text(holdTimer.conflictMessage ??
+                             "This time is temporarily held by another customer. Select a different time or wait — it will be released automatically if they don't complete their booking.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if holdTimer.conflictSecondsRemaining > 0 {
+                            HStack(spacing: 4) {
+                                Text("Releases in")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(holdTimer.conflictTimeLabel)
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .monospacedDigit()
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+
+                Button {
+                    holdTimer.clearConflict()
+                    viewModel.selectedTime = nil
+                } label: {
+                    Text("Select a Different Time")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.indigo)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+            }
+            .padding(.vertical, 14)
             .background(Color(.systemBackground))
         }
     }

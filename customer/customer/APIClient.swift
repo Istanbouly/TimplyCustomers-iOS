@@ -61,6 +61,25 @@ struct APIClient {
         try await request(method: "GET", path: path, body: nil, token: token)
     }
 
+    // MARK: - PATCH
+
+    static func patch<T: Decodable>(
+        path: String,
+        body: [String: Any],
+        token: String
+    ) async throws -> T {
+        try await request(method: "PATCH", path: path, body: body, token: token)
+    }
+
+    // MARK: - DELETE
+
+    static func delete<T: Decodable>(
+        path: String,
+        token: String
+    ) async throws -> T {
+        try await request(method: "DELETE", path: path, body: nil, token: token)
+    }
+
     // MARK: - Shared request builder
 
     private static func request<T: Decodable>(

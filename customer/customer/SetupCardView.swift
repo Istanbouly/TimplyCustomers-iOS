@@ -45,12 +45,15 @@ struct SetupCardView: View {
     let onComplete: () -> Void
     let onBook: ([String: Any]) async -> Void
 
+    @EnvironmentObject var holdTimer: SlotHoldTimer
     @StateObject private var vm = SetupCardViewModel()
     @State private var resultError: String?
     @State private var isBooking = false
 
     var body: some View {
         VStack(spacing: 0) {
+            SlotCountdownBanner(holdTimer: holdTimer)
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 4) {

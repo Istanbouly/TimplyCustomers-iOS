@@ -6,6 +6,7 @@ struct ProfileView: View {
     @State private var selectedTab = 0
     @State private var selectedBooking: CustomerBooking? = nil
 
+
     var body: some View {
         NavigationStack {
             Group {
@@ -19,8 +20,8 @@ struct ProfileView: View {
                             tabPicker
                                 .padding(.horizontal, 16)
                                 .padding(.top, 16)
+                                .padding(.bottom, 8)
                             bookingsList
-                                .padding(.top, 12)
                         }
                     }
                     .refreshable { await viewModel.load() }
@@ -28,21 +29,12 @@ struct ProfileView: View {
             }
             .navigationTitle("My Bookings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        KeychainService.clearAccessToken()
-                        isAuthenticated = false
-                    } label: {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
         }
         .task { await viewModel.load() }
         .sheet(item: $selectedBooking) { booking in
-            CustomerBookingDetailView(booking: booking)
+            CustomerBookingDetailView(booking: booking) {
+                Task { await viewModel.load() }
+            }
         }
     }
 
@@ -51,8 +43,7 @@ struct ProfileView: View {
     private var profileHeader: some View {
         VStack(spacing: 10) {
             AvatarView(url: viewModel.profile?.avatarUrl, name: viewModel.profile?.name ?? "", size: 64)
-            .padding(.top, 20)
-
+                .padding(.top, 20)
             VStack(spacing: 2) {
                 Text(viewModel.profile?.name ?? "")
                     .font(.headline)
@@ -106,9 +97,12 @@ struct ProfileView: View {
     // MARK: - Bookings list
 
     private var bookingsList: some View {
-        let items = selectedTab == 0 ? viewModel.upcoming : viewModel.past
+        let items   = selectedTab == 0 ? viewModel.upcoming    : viewModel.past
+        let hasMore = selectedTab == 0 ? viewModel.upcomingHasMore : viewModel.pastHasMore
+        let isLoadingMore = selectedTab == 0 ? viewModel.upcomingLoading : viewModel.pastLoading
+
         return Group {
-            if items.isEmpty {
+            if items.isEmpty && !isLoadingMore {
                 VStack(spacing: 10) {
                     Image(systemName: "calendar.badge.clock")
                         .font(.system(size: 36))
@@ -120,86 +114,134 @@ struct ProfileView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 60)
             } else {
-                LazyVStack(spacing: 10) {
-                    ForEach(items) { booking in
-                        BookingCard(booking: booking)
-                            .onTapGesture { selectedBooking = booking }
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(selectedTab == 0 ? "Upcoming" : "Past")
+                            .font(.footnote)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+
+                    VStack(spacing: 0) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, booking in
+                            CallLogRow(booking: booking)
+                                .contentShape(Rectangle())
+                                .onTapGesture { selectedBooking = booking }
+                                .onAppear {
+                                    // Trigger next page when last item appears
+                                    if index == items.count - 1 {
+                                        Task {
+                                            if selectedTab == 0 {
+                                                await viewModel.loadMoreUpcoming()
+                                            } else {
+                                                await viewModel.loadMorePast()
+                                            }
+                                        }
+                                    }
+                                }
+                            if index < items.count - 1 {
+                                Divider().padding(.leading, 70)
+                            }
+                        }
+                    }
+                    .background(Color(.systemBackground))
+
+                    if isLoadingMore {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    } else if !hasMore && !items.isEmpty {
+                        Text("All caught up")
+                            .font(.caption)
+                            .foregroundStyle(Color(.systemGray3))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
                     }
                 }
-                .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
         }
     }
-
-    // MARK: - Helpers
-
-    private func initials(from name: String) -> String {
-        let parts = name.components(separatedBy: " ").filter { !$0.isEmpty }
-        return String(parts.prefix(2).compactMap { $0.first }).uppercased()
-    }
 }
 
-// MARK: - Booking card
+// MARK: - Call log row
 
-struct BookingCard: View {
+struct CallLogRow: View {
     let booking: CustomerBooking
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            // Calendar icon
+        HStack(spacing: 14) {
+            // Icon
             ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.indigo.opacity(0.1))
-                    .frame(width: 40, height: 40)
-                Image(systemName: "calendar")
-                    .font(.system(size: 17))
-                    .foregroundStyle(.indigo)
+                Circle()
+                    .fill(iconBg)
+                    .frame(width: 42, height: 42)
+                Image(systemName: iconName)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(iconColor)
             }
-            .padding(.top, 2)
+            .padding(.leading, 16)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(booking.displayServiceName)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .lineLimit(1)
-                            if let dur = booking.totalDurationMinutes {
-                                Text("\(dur) min")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Text(booking.businesses?.name ?? "")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    StatusBadge(status: booking.status)
-                }
-
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("\(booking.formattedDate) · \(booking.formattedTime)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            // Content
+            VStack(alignment: .leading, spacing: 2) {
+                Text(booking.displayServiceName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .foregroundStyle(booking.isUpcoming ? Color.primary : Color.secondary)
+                Text(booking.businesses?.name ?? "")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
+
+            Spacer()
+
+            // Right side: date + status
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(booking.formattedDate)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                StatusBadge(status: booking.status)
+            }
+            .padding(.trailing, 16)
         }
-        .padding(14)
+        .padding(.vertical, 10)
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color(.systemGray5), lineWidth: 1)
-        )
-        .opacity(booking.isUpcoming ? 1 : 0.75)
+    }
+
+    private var iconName: String {
+        switch booking.status {
+        case "cancelled": return "xmark"
+        case "no_show":   return "person.slash"
+        default:          return "scissors"
+        }
+    }
+
+    private var iconColor: Color {
+        switch booking.status {
+        case "confirmed": return .indigo
+        case "pending":   return Color(red: 0.85, green: 0.55, blue: 0.0)
+        case "cancelled": return Color(red: 0.75, green: 0.20, blue: 0.20)
+        default:          return .secondary
+        }
+    }
+
+    private var iconBg: Color {
+        switch booking.status {
+        case "confirmed": return Color.indigo.opacity(0.1)
+        case "pending":   return Color(red: 0.85, green: 0.55, blue: 0.0).opacity(0.1)
+        case "cancelled": return Color(red: 0.75, green: 0.20, blue: 0.20).opacity(0.1)
+        default:          return Color(.systemGray5)
+        }
     }
 }
+
+// MARK: - Status badge
 
 struct StatusBadge: View {
     let status: String
@@ -223,6 +265,7 @@ struct StatusBadge: View {
         switch status {
         case "confirmed": return "Confirmed"
         case "pending":   return "Pending"
+        case "no_show":   return "No show"
         default:          return "Cancelled"
         }
     }

@@ -14,9 +14,22 @@
 		FF11815A2FC8E958005036AA /* customer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = customer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FF1181A62FCA6040005036AA /* Exceptions for "customer" folder in "customer" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = FF1181592FC8E958005036AA /* customer */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		FF11815C2FC8E958005036AA /* customer */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FF1181A62FCA6040005036AA /* Exceptions for "customer" folder in "customer" target */,
+			);
 			path = customer;
 			sourceTree = "<group>";
 		};
@@ -265,6 +278,9 @@
 				DEVELOPMENT_TEAM = 2T5UJ9W7W5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = customer/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Timply;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sign in securely with Face ID";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -298,6 +314,9 @@
 				DEVELOPMENT_TEAM = 2T5UJ9W7W5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = customer/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Timply;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sign in securely with Face ID";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

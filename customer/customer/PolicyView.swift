@@ -9,6 +9,8 @@ struct PolicyView: View {
     let onComplete: () -> Void
     let onBook: ([String: Any]) async -> Void
 
+    @EnvironmentObject var holdTimer: SlotHoldTimer
+
     @State private var showPaymentView = false
     @State private var showSetupCardView = false
     @State private var isProcessing = false
@@ -17,6 +19,8 @@ struct PolicyView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            SlotCountdownBanner(holdTimer: holdTimer)
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     // Header
@@ -88,6 +92,7 @@ struct PolicyView: View {
                 policySnapshot:  policySnapshot,
                 onComplete:      onComplete
             )
+            .environmentObject(holdTimer)
         }
         .navigationDestination(isPresented: $showSetupCardView) {
             SetupCardView(
@@ -96,6 +101,7 @@ struct PolicyView: View {
                 onComplete:     onComplete,
                 onBook:         onBook
             )
+            .environmentObject(holdTimer)
         }
     }
 

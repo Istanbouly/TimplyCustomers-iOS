@@ -21,6 +21,7 @@ struct PaymentView: View {
     let policySnapshot: [String: Any]
     let onComplete: () -> Void
 
+    @EnvironmentObject var holdTimer: SlotHoldTimer
     @StateObject private var viewModel = PaymentViewModel()
 
     var body: some View {
@@ -77,6 +78,8 @@ struct PaymentView: View {
     @ViewBuilder
     private var paymentContent: some View {
         VStack(spacing: 0) {
+            SlotCountdownBanner(holdTimer: holdTimer)
+
             ScrollView {
                 VStack(spacing: 20) {
                     // Order summary card

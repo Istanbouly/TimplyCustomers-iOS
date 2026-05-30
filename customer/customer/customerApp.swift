@@ -18,6 +18,10 @@ struct customerApp: App {
                             .tabItem {
                                 Label("Explore", systemImage: "magnifyingglass")
                             }
+                        SettingsView(isAuthenticated: $isAuthenticated)
+                            .tabItem {
+                                Label("Settings", systemImage: "gearshape")
+                            }
                     }
                 } else {
                     LoginView(isAuthenticated: $isAuthenticated, customerName: $customerName)
@@ -27,7 +31,9 @@ struct customerApp: App {
             .preferredColorScheme(.light)
             .onAppear {
                 APIClient.onUnauthorized = {
-                    isAuthenticated = false
+                    DispatchQueue.main.async {
+                        isAuthenticated = false
+                    }
                 }
             }
         }
