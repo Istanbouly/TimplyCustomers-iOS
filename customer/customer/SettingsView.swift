@@ -34,8 +34,12 @@ struct SettingsView: View {
             .alert("Sign Out", isPresented: $showSignOutAlert) {
                 Button("Cancel", role: .cancel) {}
                 Button("Sign Out", role: .destructive) {
-                    KeychainService.clearAccessToken()
-                    isAuthenticated = false
+                    Task {
+                        // Unregister push token before clearing credentials
+                        await PushNotificationManager.shared.unregisterCurrentToken()
+                        KeychainService.clearAccessToken()
+                        isAuthenticated = false
+                    }
                 }
             } message: {
                 Text("Are you sure you want to sign out?")

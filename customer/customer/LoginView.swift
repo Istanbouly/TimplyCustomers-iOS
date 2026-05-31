@@ -208,6 +208,7 @@ struct LoginView: View {
         defer { googleLoading = false }
         guard let result = await GoogleSignIn.shared.signIn() else { return }
         KeychainService.saveTokens(accessToken: result.accessToken, refreshToken: result.refreshToken)
+        await PushNotificationManager.shared.requestPermissionAndRegister()
         customerName = result.name
         isAuthenticated = true
     }
@@ -248,6 +249,7 @@ struct LoginView: View {
         if let profile = try? await APIClient.get(path: "/customer/me", token: newToken) as CustomerProfileResponse {
             customerName = profile.customer.name ?? ""
         }
+        await PushNotificationManager.shared.requestPermissionAndRegister()
         isAuthenticated = true
     }
 

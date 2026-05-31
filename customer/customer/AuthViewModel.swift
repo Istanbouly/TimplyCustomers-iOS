@@ -32,7 +32,10 @@ class AuthViewModel: ObservableObject {
                 refreshToken: response.session.refreshToken
             )
 
-            // Step 4: Fetch name (best-effort, non-blocking)
+            // Step 4: Request push notification permission (best-effort)
+            await PushNotificationManager.shared.requestPermissionAndRegister()
+
+            // Step 5: Fetch name (best-effort, non-blocking)
             let name = (try? await APIClient.get(path: "/customer/me", token: response.session.accessToken) as CustomerProfileResponse)?.customer.name ?? ""
 
             return (true, name)

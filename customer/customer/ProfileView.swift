@@ -5,6 +5,7 @@ struct ProfileView: View {
     @Binding var isAuthenticated: Bool
     @State private var selectedTab = 0
     @State private var selectedBooking: CustomerBooking? = nil
+    @EnvironmentObject private var navigationState: AppNavigationState
 
 
     var body: some View {
@@ -34,6 +35,30 @@ struct ProfileView: View {
         .sheet(item: $selectedBooking) { booking in
             CustomerBookingDetailView(booking: booking) {
                 Task { await viewModel.load() }
+            }
+        }
+        .onChange(of: navigationState.pendingBookingId) { _, bookingId in
+            guard let bookingId else { return }
+            openBooking(id: bookingId)
+        }
+    }
+
+    // MARK: - Push notification deep link
+
+    private func openBooking(id: String) {
+        // Search loaded bookings first; if not found, reload then try again
+        if let booking = viewModel.upcoming.first(where: { $0.id == id })
+                      ?? viewModel.past.first(where: { $0.id == id }) {
+            selectedBooking = booking
+            navigationState.pendingBookingId = nil
+        } else {
+            Task {
+                await viewModel.load()
+                if let booking = viewModel.upcoming.first(where: { $0.id == id })
+                              ?? viewModel.past.first(where: { $0.id == id }) {
+                    selectedBooking = booking
+                }
+                navigationState.pendingBookingId = nil
             }
         }
     }
